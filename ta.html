@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>塔罗抽牌（洗牌→弧形牌阵→抽三张→翻牌）</title>
+  <style>
+    :root{
+      --bg1:#020617; --bg2:#0b1220; --bg3:#1e1b4b;
+      --cardW:64px; --cardH:101px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC","Microsoft YaHei", Arial, sans-serif;
+      color:#fff;
+      background: radial-gradient(1200px 800px at 30% -10%, rgba(99,102,241,.25), transparent 55%),
+                  radial-gradient(900px 600px at 85% 10%, rgba(236,72,153,.18), transparent 55%),
+                  linear-gradient(180deg, var(--bg1), var(--bg2) 55%, var(--bg3));
+      min-height:100dvh;
+    }
+    .wrap{max-width:1180px;margin:0 auto;padding:28px 16px 36px}
+    .pill{
+      display:inline-flex;gap:8px;align-items:center;
+      padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.10);
+      color:rgba(255,255,255,.82);font-size:12px
+    }
+    h1{margin:10px 0 6px;font-size:26px;letter-spacing:-.2px}
+    .sub{margin:0;color:rgba(255,255,255,.72);font-size:13px;max-width:720px;line-height:1.6}
+    .topbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;justify-content:space-between}
+    .btns{display:flex;gap:10px;flex-wrap:wrap}
+    button{
+      appearance:none;border:0;cursor:pointer;
+      border-radius:14px;padding:10px 14px;
+      font-weight:600;color:#fff;
+      background:rgba(255,255,255,.10);
+      transition:transform .12s ease, background .12s ease, opacity .12s ease;
+    }
+    button:hover{background:rgba(255,255,255,.15)}
+    button:active{transform:translateY(1px)}
+    button.primary{background:rgba(99,102,241,.9)}
+    button.primary:hover{background:rgba(99,102,241,1)}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    .grid{
+      margin-top:18px;
+      display:grid;grid-template-columns: 1fr;gap:14px;
+    }
+    @media (min-width: 980px){
+      .grid{grid-template-columns: 380px 1fr}
+    }
+
+    /* 左侧：三张牌 */
+    .panel{
+      background:rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:18px;
+      overflow:hidden;
+    }
+    .ph{padding:14px 14px 8px;font-weight:800;font-size:14px}
+    .pc{padding:0 14px 14px}
+    .slotGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .slot{
+      background:rgba(255,255,255,.05);
+      border-radius:16px;padding:8px
+    }
+    .slot .meta{margin-top:8px;min-height:40px;font-size:12px;color:rgba(255,255,255,.78)}
+    .slot .meta .dim{color:rgba(255,255,255,.55)}
+    .hint{
+      margin-top:10px;
+      display:flex;gap:10px;align-items:flex-start;
+      background:rgba(255,255,255,.05);border-radius:14px;padding:10px;
+      font-size:12px;color:rgba(255,255,255,.72)
+    }
+    .hint b{color:rgba(255,255,255,.85)}
+    .hint .warn{margin-top:4px;color:rgba(253,230,138,.95);font-weight:700}
+
+    /* 翻牌 */
+    .flip{
+      width:100%;
+      aspect-ratio: 3/5;
+      perspective: 1200px;
+    }
+    .flip-inner{
+      width:100%;height:100%;
+      position:relative;
+      transform-style:preserve-3d;
+      transition: transform .75s cubic-bezier(.2,.8,.2,1);
+      border-radius:14px;
+      overflow:hidden;
+      box-shadow: 0 18px 50px rgba(0,0,0,.35);
+    }
+    .flip.showFace .flip-inner{ transform: rotateY(180deg); }
+    .face, .back{
+      position:absolute;inset:0;
+      backface-visibility:hidden;
+    }
+    .face{transform: rotateY(180deg);}
+
+    /* 右侧：弧形牌阵 */
+    .arcPanel{position:relative;min-height:520px}
+    .arcBox{
+      position:relative;
+      height:460px;
+      border-radius:18px;
+      background:rgba(0,0,0,.18);
+      overflow:hidden;
+    }
+    .arcHeader{
+      padding:12px 14px 0;
+      font-weight:800;font-size:14px;
+      position:relative;z-index:2;
+    }
+    .arcHint{
+      position:absolute;left:50%;top:12px;transform:translateX(-50%);
+      padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.10);
+      font-size:12px;color:rgba(255,255,255,.75);
+      pointer-events:none;z-index:3
+    }
+    .arcStage{
+      position:absolute;inset:0;
+      padding-top:42px;
+    }
+    .arcCards{
+      position:absolute;left:0;right:0;bottom:0;
+      height:410px;
+    }
+    .arcCardBtn{
+      position:absolute;
+      width:var(--cardW);height:var(--cardH);
+      border-radius:16px;
+      background:transparent;
+      padding:0;
+      transform-origin: 50% 120%;
+      box-shadow: 0 14px 40px rgba(0,0,0,.35);
+      outline:none;
+    }
+    .arcCardBtn:focus-visible{box-shadow: 0 0 0 2px rgba(165,180,252,.85), 0 14px 40px rgba(0,0,0,.35);}
+    .arcCardBtn:not(:disabled):hover{filter:brightness(1.1)}
+    .arcCardBtn:disabled{cursor:not-allowed}
+
+    /* 洗牌遮罩 */
+    .shuffleOverlay{
+      position:absolute;inset:0;
+      display:flex;align-items:center;justify-content:center;
+      background: radial-gradient(600px 500px at 50% 45%, rgba(99,102,241,.18), rgba(0,0,0,.35));
+      z-index:10;
+    }
+    .shuffleStack{width:220px;height:300px;position:relative}
+    .sh-card{
+      position:absolute;inset:0;border-radius:18px;overflow:hidden;
+      box-shadow:0 24px 70px rgba(0,0,0,.55);
+      transform-origin: 50% 120%;
+      opacity:.96;
+      animation: riffle 1.4s ease-in-out infinite alternate;
+    }
+    .sh-card:nth-child(1){transform:rotate(-10deg);animation-delay:.00s}
+    .sh-card:nth-child(2){transform:rotate(-6deg);animation-delay:.06s}
+    .sh-card:nth-child(3){transform:rotate(-2deg);animation-delay:.12s}
+    .sh-card:nth-child(4){transform:rotate(2deg);animation-delay:.18s}
+    .sh-card:nth-child(5){transform:rotate(6deg);animation-delay:.24s}
+    .sh-card:nth-child(6){transform:rotate(10deg);animation-delay:.30s}
+    @keyframes riffle{
+      from{ translate: 0 0; rotate: -8deg; scale: .98 }
+      to{ translate: 14px -10px; rotate: 8deg; scale: 1.02 }
+    }
+    .shuffleLabel{
+      position:absolute;left:50%;bottom:-44px;transform:translateX(-50%);
+      padding:8px 14px;border-radius:999px;background:rgba(255,255,255,.10);
+      font-size:13px;color:rgba(255,255,255,.80)
+    }
+
+    /* 解读区 */
+    .readPanel{margin-top:14px}
+    .readBody{padding:0 14px 14px}
+    .readGrid{display:grid;gap:10px}
+    @media(min-width:980px){.readGrid{grid-template-columns:repeat(3,1fr)}}
+    .readCard{
+      background:rgba(255,255,255,.05);
+      border-radius:16px;padding:14px
+    }
+    .readCard .t{font-weight:900;font-size:14px}
+    .readCard .s{margin-top:4px;color:rgba(255,255,255,.60);font-size:12px}
+    .readCard ul{margin:10px 0 0;padding-left:18px;color:rgba(255,255,255,.75);font-size:13px;line-height:1.55}
+    .foot{margin-top:18px;text-align:center;color:rgba(255,255,255,.45);font-size:12px}
+
+    /* SVG 容器填满 */
+    .svgFill{width:100%;height:100%;display:block}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <div class="pill">✨ 塔罗抽牌 · 洗牌 → 弧形牌阵 → 抽三张 → 翻牌</div>
+        <h1>抽三张，看看宇宙要对你说什么 ✨</h1>
+        <p class="sub">点击弧形牌背抽牌（最多三张）。抽满后点“翻牌”显示牌面（含正/逆位）。当前牌面/牌背为内置 SVG 占位，你可替换成真实图片。</p>
+      </div>
+      <div class="btns">
+        <button id="resetBtn">重新开始</button>
+        <button id="revealBtn" class="primary">翻牌</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- 左：抽到的三张 -->
+      <section class="panel">
+        <div class="ph">你的三张牌</div>
+        <div class="pc">
+          <div class="slotGrid" id="slots"></div>
+
+          <div class="hint" id="hintBox">
+            <div>🪐</div>
+            <div>
+              <b>小提示</b>
+              <div id="hintText">正在洗牌…准备好接收讯息～</div>
+              <div id="warnText" class="warn" style="display:none"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右：弧形牌阵 -->
+      <section class="panel arcPanel">
+        <div class="arcHeader">弧形牌阵（剩余 <span id="remain">78</span> / 78）</div>
+        <div class="pc">
+          <div class="arcBox" id="arcBox">
+            <div class="arcHint" id="arcHint"></div>
+
+            <div class="arcStage">
+              <div class="arcCards" id="arcCards"></div>
+            </div>
+
+            <!-- 洗牌遮罩 -->
+            <div class="shuffleOverlay" id="shuffleOverlay">
+              <div class="shuffleStack">
+                <div class="sh-card" id="sh1"></div>
+                <div class="sh-card" id="sh2"></div>
+                <div class="sh-card" id="sh3"></div>
+                <div class="sh-card" id="sh4"></div>
+                <div class="sh-card" id="sh5"></div>
+                <div class="sh-card" id="sh6"></div>
+                <div class="shuffleLabel">正在洗牌…</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 解读区 -->
+    <section class="panel readPanel">
+      <div class="ph">解读区（示例占位）</div>
+      <div class="readBody">
+        <div id="readPlaceholder" class="sub" style="max-width:none">
+          翻牌后，这里可以展示每张牌的含义、关键词与组合解读。
+        </div>
+        <div id="readGrid" class="readGrid" style="display:none"></div>
+      </div>
+    </section>
+
+    <div class="foot">Made with a tiny bit of cosmic chaos ✨</div>
+  </div>
+
+  <script>
+    // -----------------------------
+    // SVG：牌背/牌面（占位，可替换真实图片）
+    // -----------------------------
+    function cardBackSVG(dense=false){
+      const p = dense ? 24 : 36;
+      return `
+      <svg viewBox="0 0 300 500" class="svgFill" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="rgb(17,24,39)"/>
+            <stop offset="1" stop-color="rgb(99,102,241)"/>
+          </linearGradient>
+          <pattern id="stars" width="${p}" height="${p}" patternUnits="userSpaceOnUse">
+            <circle cx="6" cy="8" r="1.5" fill="rgba(255,255,255,.35)"/>
+            <circle cx="18" cy="16" r="1" fill="rgba(255,255,255,.25)"/>
+            <circle cx="12" cy="22" r="1" fill="rgba(255,255,255,.18)"/>
+          </pattern>
+        </defs>
+        <rect x="18" y="18" width="264" height="464" rx="22" fill="url(#bg)"/>
+        <rect x="30" y="30" width="240" height="440" rx="18" fill="url(#stars)" opacity="0.8"/>
+        <g opacity="0.9">
+          <circle cx="150" cy="250" r="92" fill="rgba(0,0,0,.18)"/>
+          <circle cx="150" cy="250" r="78" fill="rgba(255,255,255,.10)"/>
+          <path d="M150 175 L166 234 L228 234 L178 268 L195 325 L150 292 L105 325 L122 268 L72 234 L134 234 Z"
+                fill="rgba(255,255,255,.55)"/>
+        </g>
+        <rect x="18" y="18" width="264" height="464" rx="22" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="3"/>
+      </svg>`;
+    }
+
+    function cardFaceSVG(title, subtitle, reversed){
+      const rot = reversed ? 'transform="rotate(180 150 250)"' : '';
+      return `
+      <svg viewBox="0 0 300 500" class="svgFill" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="rgb(255,251,235)"/>
+            <stop offset="1" stop-color="rgb(254,243,199)"/>
+          </linearGradient>
+        </defs>
+        <rect x="18" y="18" width="264" height="464" rx="22" fill="url(#paper)"/>
+        <rect x="30" y="30" width="240" height="440" rx="18" fill="rgba(0,0,0,.04)"/>
+
+        <g ${rot}>
+          <text x="150" y="92" text-anchor="middle" font-size="22" fill="rgba(17,24,39,.88)"
+                font-family="ui-sans-serif,system-ui">${escapeXml(title)}</text>
+          ${subtitle ? `<text x="150" y="122" text-anchor="middle" font-size="14" fill="rgba(17,24,39,.60)"
+                font-family="ui-sans-serif,system-ui">${escapeXml(subtitle)}</text>` : ''}
+
+          <g opacity="0.9">
+            <circle cx="150" cy="260" r="88" fill="rgba(99,102,241,.18)"/>
+            <circle cx="150" cy="260" r="62" fill="rgba(17,24,39,.10)"/>
+            <path d="M150 202 C174 220 192 244 192 266 C192 300 173 330 150 346 C127 330 108 300 108 266 C108 244 126 220 150 202 Z"
+                  fill="rgba(17,24,39,.30)"/>
+            <path d="M150 222 C164 236 174 250 174 264 C174 284 164 302 150 312 C136 302 126 284 126 264 C126 250 136 236 150 222 Z"
+                  fill="rgba(255,255,255,.55)"/>
+          </g>
+
+          <text x="150" y="446" text-anchor="middle" font-size="12" fill="rgba(17,24,39,.55)"
+                font-family="ui-sans-serif,system-ui">${reversed ? 'Reversed' : 'Upright'}</text>
+        </g>
+
+        <rect x="18" y="18" width="264" height="464" rx="22" fill="none" stroke="rgba(17,24,39,.15)" stroke-width="3"/>
+      </svg>`;
+    }
+
+    function escapeXml(s){
+      return String(s).replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[c]));
+    }
+
+    // -----------------------------
+    // 牌组数据（78）
+    // -----------------------------
+    const MAJOR = [
+      "The Fool","The Magician","The High Priestess","The Empress","The Emperor","The Hierophant",
+      "The Lovers","The Chariot","Strength","The Hermit","Wheel of Fortune","Justice",
+      "The Hanged Man","Death","Temperance","The Devil","The Tower","The Star","The Moon",
+      "The Sun","Judgement","The World"
+    ];
+    const SUITS = ["Wands","Cups","Swords","Pentacles"];
+    const RANKS = ["Ace","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Page","Knight","Queen","King"];
+
+    function buildDeck(){
+      const majors = MAJOR.map((name,i)=>({id:`M-${i}`, name, arcana:"Major"}));
+      const minors = [];
+      for(const suit of SUITS){
+        for(const rank of RANKS){
+          minors.push({id:`m-${suit}-${rank}`, name:`${rank} of ${suit}`, arcana:"Minor", suit, rank});
+        }
+      }
+      return majors.concat(minors);
+    }
+
+    // -----------------------------
+    // 随机与洗牌
+    // -----------------------------
+    function mulberry32(seed){
+      return function(){
+        let t = seed += 0x6D2B79F5;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    function shuffle(arr, rand){
+      const a = arr.slice();
+      for(let i=a.length-1;i>0;i--){
+        const j = Math.floor(rand()*(i+1));
+        [a[i],a[j]] = [a[j],a[i]];
+      }
+      return a;
+    }
+    function clamp(n,min,max){return Math.max(min, Math.min(max,n));}
+
+    // -----------------------------
+    // 状态
+    // -----------------------------
+    const state = {
+      phase: "shuffling", // shuffling | ready | revealed
+      seed: Date.now(),
+      rand: null,
+      base: buildDeck(),
+      deck: [],
+      drawn: [], // {card, reversed}
+      warn: ""
+    };
+
+    // -----------------------------
+    // DOM
+    // -----------------------------
+    const slotsEl = document.getElementById("slots");
+    const remainEl = document.getElementById("remain");
+    const arcBoxEl = document.getElementById("arcBox");
+    const arcCardsEl = document.getElementById("arcCards");
+    const shuffleOverlayEl = document.getElementById("shuffleOverlay");
+    const resetBtn = document.getElementById("resetBtn");
+    const revealBtn = document.getElementById("revealBtn");
+    const hintTextEl = document.getElementById("hintText");
+    const warnTextEl = document.getElementById("warnText");
+    const arcHintEl = document.getElementById("arcHint");
+    const readPlaceholderEl = document.getElementById("readPlaceholder");
+    const readGridEl = document.getElementById("readGrid");
+
+    // 洗牌层的 6 张占位
+    for(const id of ["sh1","sh2","sh3","sh4","sh5","sh6"]){
+      document.getElementById(id).innerHTML = cardBackSVG(false);
+    }
+
+    // -----------------------------
+    // 初始化 / 重置
+    // -----------------------------
+    function resetAll(){
+      state.seed = Date.now();
+      state.rand = mulberry32(state.seed);
+      state.phase = "shuffling";
+      state.drawn = [];
+      state.warn = "";
+      state.deck = shuffle(state.base, state.rand);
+
+      renderAll();
+      // 2.2 秒后进入 ready
+      shuffleOverlayEl.style.display = "flex";
+      setTimeout(()=>{
+        state.phase = "ready";
+        renderAll();
+        shuffleOverlayEl.style.display = "none";
+      }, 2200);
+    }
+
+    // -----------------------------
+    // 抽牌 / 翻牌
+    // -----------------------------
+    function canDraw(){
+      return state.phase === "ready" && state.drawn.length < 3;
+    }
+
+    function drawOne(cardId){
+      if(!canDraw()) return;
+      const idx = state.deck.findIndex(c => c.id === cardId);
+      if(idx < 0) return;
+      const picked = state.deck[idx];
+      state.deck.splice(idx, 1);
+      const reversed = state.rand() < 0.28;
+      state.drawn.push({card:picked, reversed});
+      state.warn = "";
+      renderAll();
+    }
+
+    function reveal(){
+      if(state.phase === "shuffling") return;
+      if(state.drawn.length !== 3){
+        state.warn = "要先抽满三张才可以翻牌哦～";
+        renderAll();
+        return;
+      }
+      state.phase = "revealed";
+      state.warn = "";
+      renderAll();
+    }
+
+    // -----------------------------
+    // 渲染：三张槽位
+    // -----------------------------
+    function renderSlots(){
+      slotsEl.innerHTML = "";
+      for(let i=0;i<3;i++){
+        const d = state.drawn[i];
+        const showFace = state.phase === "revealed" && !!d;
+
+        const slot = document.createElement("div");
+        slot.className = "slot";
+
+        const flip = document.createElement("div");
+        flip.className = "flip" + (showFace ? " showFace" : "");
+        flip.innerHTML = `
+          <div class="flip-inner">
+            <div class="back">${cardBackSVG(true)}</div>
+            <div class="face">
+              ${d ? cardFaceSVG(
+                    d.card.name,
+                    d.card.arcana === "Major" ? "Major Arcana" : (d.card.suit || "Minor Arcana"),
+                    d.reversed
+                 ) : `<div style="
+                      width:100%;height:100%;
+                      display:flex;align-items:center;justify-content:center;
+                      border-radius:14px;
+                      border:1px dashed rgba(255,255,255,.25);
+                      background:rgba(255,255,255,.06);
+                      color:rgba(255,255,255,.60);
+                      font-size:12px;">${state.phase==="shuffling"?"洗牌中":"待抽"}</div>`
+              }
+            </div>
+          </div>
+        `;
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        if(d){
+          meta.innerHTML = `<div style="font-weight:800">${escapeXml(d.card.name)}</div>
+                            <div class="dim">${d.reversed ? "逆位" : "正位"}</div>`;
+        }else{
+          meta.innerHTML = `<div class="dim">点击下方弧形牌阵抽牌</div>`;
+        }
+
+        slot.appendChild(flip);
+        slot.appendChild(meta);
+        slotsEl.appendChild(slot);
+      }
+    }
+
+    // -----------------------------
+    // 渲染：弧形牌阵（78 张）
+    // -----------------------------
+    function renderArc(){
+      // 剩余数量
+      remainEl.textContent = String(state.deck.length);
+
+      // 顶部提示
+      if(state.phase === "ready"){
+        arcHintEl.textContent = state.drawn.length < 3 ? "点击任意牌背抽牌（最多三张）" : "已抽满三张：点“翻牌”揭示牌面";
+        arcHintEl.style.display = "inline-flex";
+      }else{
+        arcHintEl.style.display = "none";
+      }
+
+      // 根据容器宽度自适应卡牌尺寸
+      const rect = arcBoxEl.getBoundingClientRect();
+      const w = Math.max(320, rect.width);
+      const cardW = clamp(Math.floor(w/10), 46, 78);
+      const cardH = Math.floor(cardW*1.58);
+      document.documentElement.style.setProperty("--cardW", cardW + "px");
+      document.documentElement.style.setProperty("--cardH", cardH + "px");
+
+      // 弧形参数
+      const totalAngle = clamp(w < 640 ? 120 : 160, 110, 170);
+      const radius = clamp(w*0.75, 420, 980);
+      const overlap = 0.58;
+      const squeeze = (1-overlap)*0.9;
+
+      const centerX = w/2;
+      const centerY = 390; // 弧心 y
+      const n = Math.max(1, state.deck.length);
+
+      // 清空并重绘（78 个按钮没问题）
+      arcCardsEl.innerHTML = "";
+      for(let i=0;i<state.deck.length;i++){
+        const c = state.deck[i];
+        const t = n===1 ? 0.5 : i/(n-1);
+        const angle = -totalAngle/2 + t*totalAngle;
+        const rad = angle * Math.PI/180;
+
+        const x = centerX + radius*Math.sin(rad);
+        const y = centerY - radius*Math.cos(rad);
+
+        const xS = centerX + (x-centerX)*squeeze;
+        const yS = centerY + (y-centerY)*squeeze;
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "arcCardBtn";
+        btn.style.left = (xS - cardW/2) + "px";
+        btn.style.top  = (yS - cardH/2) + "px";
+        btn.style.transform = `rotate(${angle}deg)`;
+        btn.style.zIndex = String(i);
+
+        const disabled = !canDraw();
+        btn.disabled = disabled;
+        btn.setAttribute("aria-label", "抽取 " + c.name);
+
+        btn.innerHTML = cardBackSVG(false);
+
+        btn.addEventListener("click", ()=>drawOne(c.id));
+        arcCardsEl.appendChild(btn);
+      }
+    }
+
+    // -----------------------------
+    // 渲染：提示 / 解读区 / 按钮状态
+    // -----------------------------
+    function renderText(){
+      // 左侧提示
+      let hint = "";
+      if(state.phase === "shuffling") hint = "正在洗牌…准备好接收讯息～";
+      else if(state.phase === "ready"){
+        hint = state.drawn.length < 3 ? "还可以继续抽牌（最多三张）。" : "抽满三张啦！点“翻牌”揭示牌面。";
+      }else{
+        hint = "已翻牌。你可以点“重新开始”再来一局。";
+      }
+      hintTextEl.textContent = hint;
+
+      // warn
+      if(state.warn){
+        warnTextEl.style.display = "block";
+        warnTextEl.textContent = state.warn;
+      }else{
+        warnTextEl.style.display = "none";
+        warnTextEl.textContent = "";
+      }
+
+      // 按钮
+      revealBtn.disabled = (state.phase === "shuffling");
+
+      // 解读区
+      if(state.phase !== "revealed"){
+        readPlaceholderEl.style.display = "block";
+        readGridEl.style.display = "none";
+        readGridEl.innerHTML = "";
+      }else{
+        readPlaceholderEl.style.display = "none";
+        readGridEl.style.display = "grid";
+        readGridEl.innerHTML = "";
+        state.drawn.forEach((d, i)=>{
+          const div = document.createElement("div");
+          div.className = "readCard";
+          const arcText = d.card.arcana === "Major" ? "大阿卡那" : `小阿卡那 · ${d.card.suit}`;
+          div.innerHTML = `
+            <div class="t">第 ${i+1} 张：${escapeXml(d.card.name)}</div>
+            <div class="s">${d.reversed ? "逆位" : "正位"} · ${arcText}</div>
+            <ul>
+              <li>关键词：${d.reversed ? "阻滞 / 内化 / 失衡" : "启示 / 进展 / 顺势"}</li>
+              <li>建议：把注意力放在你能掌控的那一步。</li>
+              <li>提醒：不要忽略直觉给出的微小信号。</li>
+            </ul>
+          `;
+          readGridEl.appendChild(div);
+        });
+      }
+    }
+
+    function renderAll(){
+      renderSlots();
+      renderArc();
+      renderText();
+    }
+
+    // -----------------------------
+    // 事件：窗口缩放时重算弧形
+    // -----------------------------
+    let resizeTimer = null;
+    window.addEventListener("resize", ()=>{
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(()=>renderArc(), 60);
+    });
+
+    resetBtn.addEventListener("click", resetAll);
+    revealBtn.addEventListener("click", reveal);
+
+    // 启动
+    resetAll();
+  </script>
+</body>
+</html>
